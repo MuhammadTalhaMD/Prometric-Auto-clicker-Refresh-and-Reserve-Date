@@ -1,0 +1,148 @@
+(() => {
+    const SEARCH_INTERVAL = 2000; // Search every 2 seconds
+    const RESULTS_WAIT = 1000;    // Wait 1 second for results to update
+
+    let busy = false;
+    let finished = false;
+
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    function playAlarm() {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            const audioContext = new AudioContextClass();
+            if (audioContext.state === "suspended") audioContext.resume();
+
+            // Play 8 short beeps
+            for (let i = 0; i < 8; i++) {
+                setTimeout(() => {
+                    const oscillator = audioContext.createOscillator();
+                    const gain = audioContext.createGain();
+                    oscillator.type = "sine";
+                    oscillator.frequency.value = 1000;
+                    gain.gain.setValueAtTime(0.35, audioContext.currentTime);
+                    oscillator.connect(gain);
+                    gain.connect(audioContext.destination);
+                    oscillator.start();
+                    oscillator.stop(audioContext.currentTime + 0.25);
+                }, i * 350);
+            }
+        } catch (error) {
+            console.error("Could not play alarm:", error);
+        }
+    }
+
+    function noAvailabilityBoxExists() {
+        return [...document.querySelectorAll('[role="alert"] h2')]
+            .some(element => element.textContent.trim() === "Sorry No Availability Found");
+    }
+
+    async function waitForElement(getElement, timeout = 10000) {
+        const startTime = Date.now();
+        while (Date.now() - startTime < timeout) {
+            const element = getElement();
+            if (element) return element;
+            await sleep(250);
+        }
+        return null;
+    }
+
+    function findFirstDateCard() {
+        return document.querySelector('[role="radio"].date-card');
+    }
+
+    function findFirstTimeButton() {
+        const timePattern = /\b(?:0?[1-9]|1[0-2]):[0-5]\d\s*(?:AM|PM)\b/i;
+        const timeSection = document.querySelector("app-slot-card-detail");
+        if (!timeSection) return null;
+
+        const possibleElements = [...timeSection.querySelectorAll(
+            'button, [role="button"], [role="radio"], .btn, [tabindex]'
+        )];
+
+        return possibleElements.find(element => {
+            const text = element.textContent.trim();
+            const visible = element.offsetParent !== null;
+            const enabled = !element.disabled && element.getAttribute("aria-disabled") !== "true";
+            return visible && enabled && timePattern.test(text);
+        });
+    }
+
+    function findNextButton() {
+        const button = document.querySelector(
+            'button.tempSucBtn.tempSucBtn-nbme[aria-label="Continue to next page"]'
+        );
+        if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
+            return button;
+        }
+        return null;
+    }
+
+    async function selectAvailableAppointment() {
+        console.log("Availability detected.");
+        playAlarm();
+
+        const dateCard = await waitForElement(findFirstDateCard, 10000);
+        if (!dateCard) {
+            console.log("Date card was not found.");
+            return false;
+        }
+        dateCard.click();
+        console.log("Clicked date:", dateCard.getAttribute("aria-label") || dateCard.textContent.trim());
+
+        const timeButton = await waitForElement(findFirstTimeButton, 10000);
+        if (!timeButton) {
+            console.log("Time button was not found.");
+            return false;
+        }
+        timeButton.click();
+        console.log("Clicked time:", timeButton.textContent.trim());
+
+        const nextButton = await waitForElement(findNextButton, 10000);
+        if (!nextButton) {
+            console.log("Enabled Next button was not found.");
+            return false;
+        }
+        nextButton.click();
+        console.log("Clicked Next.");
+
+        finished = true;
+        clearInterval(window.prometricChecker);
+        console.log("Appointment selected. Automation stopped.");
+        return true;
+    }
+
+    async function runCheck() {
+        if (busy || finished) return;
+        busy = true;
+
+        try {
+            const searchButton = document.getElementById("searchBtn");
+            if (!searchButton || searchButton.disabled || searchButton.getAttribute("aria-disabled") === "true") {
+                console.log("Search button is unavailable.");
+                return;
+            }
+
+            searchButton.click();
+            console.log("Search clicked:", new Date().toLocaleTimeString());
+            await sleep(RESULTS_WAIT);
+
+            if (noAvailabilityBoxExists()) {
+                console.log("No availability.");
+                return;
+            }
+
+            await selectAvailableAppointment();
+        } catch (error) {
+            console.error("Automation error:", error);
+        } finally {
+            busy = false;
+        }
+    }
+
+    // Stop any older checker using the same variable
+    clearInterval(window.prometricChecker);
+
+    window.prometricChecker = setInterval(runCheck, SEARCH_INTERVAL);
+    console.log("Prometric checker started. Searching every 2 seconds.");
+})();
