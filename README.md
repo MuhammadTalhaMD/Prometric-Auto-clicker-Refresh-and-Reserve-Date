@@ -263,6 +263,16 @@ The script first stops an older checker before starting a new one, so you should
 
 The script is designed for modern desktop browsers such as Google Chrome and Microsoft Edge. Other browsers may behave differently.
 
+## License
+
+Copyright © 2026 Muhammad Talha.
+
+This project is **free for personal, educational, research, and other non-commercial use**. You may use, copy, modify, and redistribute the code for non-commercial purposes as long as the copyright notice and license are retained.
+
+**Commercial use or sale is not permitted without prior written permission from the copyright holder.** This includes selling the software, charging for access to it, or incorporating it into a paid product or service.
+
+See the `LICENSE` file for the complete terms.
+
 ## Disclaimer
 
 This is an independent personal utility and is not affiliated with, endorsed by, or supported by Prometric. Availability, appointment holds, reservation duration, scheduling rules, and final booking confirmation are controlled entirely by Prometric.
