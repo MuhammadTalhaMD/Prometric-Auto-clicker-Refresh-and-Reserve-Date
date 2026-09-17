@@ -16,31 +16,191 @@ It is intended to be easy to use even if you have no programming experience.
 
 > **Important:** The script itself does not create a 15-minute reservation timer. If Prometric temporarily holds an appointment after you proceed, that hold and its duration are controlled by Prometric.
 
-## Files
+# Quick Start — Copy This Code
 
-### `prometric-checker.js`
-This is the main script. This is the code you copy and paste into your browser Console to start checking.
+If you just want to use the checker, you do **not** need to download anything.
 
-### `stop-checker.js`
-This contains a one-line command that stops the automatic checker manually.
+1. Open Prometric and go to the appointment search page.
+2. Choose your location/date search options normally.
+3. Press **Ctrl + Shift + J** in Chrome or Microsoft Edge to open the browser Console. You can also press **F12** and click **Console**.
+4. Click the **Copy** button in the top-right corner of the code box below to copy the entire script.
+5. Paste it into the Console and press **Enter**.
+6. Leave the Prometric tab open.
 
-## How to use it — no programming knowledge required
+```javascript
+(() => {
+    const SEARCH_INTERVAL = 2000; // Search every 2 seconds
+    const RESULTS_WAIT = 1000;    // Wait 1 second for results to update
 
-### 1. Open Prometric
+    let busy = false;
+    let finished = false;
+
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    function playAlarm() {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            const audioContext = new AudioContextClass();
+            if (audioContext.state === "suspended") audioContext.resume();
+
+            // Play 8 short beeps
+            for (let i = 0; i < 8; i++) {
+                setTimeout(() => {
+                    const oscillator = audioContext.createOscillator();
+                    const gain = audioContext.createGain();
+                    oscillator.type = "sine";
+                    oscillator.frequency.value = 1000;
+                    gain.gain.setValueAtTime(0.35, audioContext.currentTime);
+                    oscillator.connect(gain);
+                    gain.connect(audioContext.destination);
+                    oscillator.start();
+                    oscillator.stop(audioContext.currentTime + 0.25);
+                }, i * 350);
+            }
+        } catch (error) {
+            console.error("Could not play alarm:", error);
+        }
+    }
+
+    function noAvailabilityBoxExists() {
+        return [...document.querySelectorAll('[role="alert"] h2')]
+            .some(element => element.textContent.trim() === "Sorry No Availability Found");
+    }
+
+    async function waitForElement(getElement, timeout = 10000) {
+        const startTime = Date.now();
+        while (Date.now() - startTime < timeout) {
+            const element = getElement();
+            if (element) return element;
+            await sleep(250);
+        }
+        return null;
+    }
+
+    function findFirstDateCard() {
+        return document.querySelector('[role="radio"].date-card');
+    }
+
+    function findFirstTimeButton() {
+        const timePattern = /\b(?:0?[1-9]|1[0-2]):[0-5]\d\s*(?:AM|PM)\b/i;
+        const timeSection = document.querySelector("app-slot-card-detail");
+        if (!timeSection) return null;
+
+        const possibleElements = [...timeSection.querySelectorAll(
+            'button, [role="button"], [role="radio"], .btn, [tabindex]'
+        )];
+
+        return possibleElements.find(element => {
+            const text = element.textContent.trim();
+            const visible = element.offsetParent !== null;
+            const enabled = !element.disabled && element.getAttribute("aria-disabled") !== "true";
+            return visible && enabled && timePattern.test(text);
+        });
+    }
+
+    function findNextButton() {
+        const button = document.querySelector(
+            'button.tempSucBtn.tempSucBtn-nbme[aria-label="Continue to next page"]'
+        );
+        if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
+            return button;
+        }
+        return null;
+    }
+
+    async function selectAvailableAppointment() {
+        console.log("Availability detected.");
+        playAlarm();
+
+        const dateCard = await waitForElement(findFirstDateCard, 10000);
+        if (!dateCard) {
+            console.log("Date card was not found.");
+            return false;
+        }
+        dateCard.click();
+        console.log("Clicked date:", dateCard.getAttribute("aria-label") || dateCard.textContent.trim());
+
+        const timeButton = await waitForElement(findFirstTimeButton, 10000);
+        if (!timeButton) {
+            console.log("Time button was not found.");
+            return false;
+        }
+        timeButton.click();
+        console.log("Clicked time:", timeButton.textContent.trim());
+
+        const nextButton = await waitForElement(findNextButton, 10000);
+        if (!nextButton) {
+            console.log("Enabled Next button was not found.");
+            return false;
+        }
+        nextButton.click();
+        console.log("Clicked Next.");
+
+        finished = true;
+        clearInterval(window.prometricChecker);
+        console.log("Appointment selected. Automation stopped.");
+        return true;
+    }
+
+    async function runCheck() {
+        if (busy || finished) return;
+        busy = true;
+
+        try {
+            const searchButton = document.getElementById("searchBtn");
+            if (!searchButton || searchButton.disabled || searchButton.getAttribute("aria-disabled") === "true") {
+                console.log("Search button is unavailable.");
+                return;
+            }
+
+            searchButton.click();
+            console.log("Search clicked:", new Date().toLocaleTimeString());
+            await sleep(RESULTS_WAIT);
+
+            if (noAvailabilityBoxExists()) {
+                console.log("No availability.");
+                return;
+            }
+
+            await selectAvailableAppointment();
+        } catch (error) {
+            console.error("Automation error:", error);
+        } finally {
+            busy = false;
+        }
+    }
+
+    // Stop any older checker using the same variable
+    clearInterval(window.prometricChecker);
+
+    window.prometricChecker = setInterval(runCheck, SEARCH_INTERVAL);
+    console.log("Prometric checker started. Searching every 2 seconds.");
+})();
+```
+
+After pressing Enter, you should see:
+
+`Prometric checker started. Searching every 2 seconds.`
+
+If your browser warns you about pasting code into Developer Tools, read the warning carefully. Only paste code that you understand and trust.
+
+## Stop the checker
+
+To stop it manually at any time, copy this line, paste it into the same Console, and press **Enter**:
+
+```javascript
+clearInterval(window.prometricChecker);
+```
+
+# Detailed instructions for beginners
+
+## 1. Open Prometric
 
 Go through the Prometric scheduling process normally until you reach the appointment search page where you can choose your search criteria and press the **Search** button.
 
 Set the location, date range, or other search options you want **before starting the script**.
 
-### 2. Open `prometric-checker.js` on GitHub
-
-In this repository, click the file named:
-
-`prometric-checker.js`
-
-Copy **all** of the code inside the file.
-
-### 3. Open your browser Console
+## 2. Open the browser Console
 
 Keep the Prometric appointment-search page open.
 
@@ -48,25 +208,25 @@ In Google Chrome or Microsoft Edge on Windows, press:
 
 `Ctrl + Shift + J`
 
-You can also press `F12` and then click the **Console** tab.
+Alternatively, press `F12`, then select the **Console** tab at the top of Developer Tools.
 
-### 4. Paste the script
+## 3. Copy the checker
 
-Click inside the Console, paste the entire `prometric-checker.js` code, and press **Enter**.
+The easiest method is to use the **Quick Start** code box near the top of this README. GitHub displays a copy button in the top-right corner of code blocks.
 
-If your browser displays a warning about pasting code into Developer Tools, read the browser warning carefully and follow its instructions only if you understand and trust the code you are pasting.
+You can also open the separate `prometric-checker.js` file from the repository file list. Click the filename, then use GitHub's **Copy raw file** button near the top-right of the file viewer to copy the complete script.
 
-### 5. Confirm that it started
+## 4. Paste and start
 
-You should see a message similar to:
+Return to the Prometric tab. Click inside the Console, paste the code, and press **Enter**.
+
+You should see:
 
 `Prometric checker started. Searching every 2 seconds.`
 
-Leave the Prometric tab open.
+Leave the Prometric tab open. The script will repeatedly press Search for you and check the results.
 
-The script will repeatedly press Search for you and check the results.
-
-### 6. When an appointment is found
+## 5. When an appointment is found
 
 When the script detects availability, it will:
 
@@ -76,17 +236,15 @@ When the script detects availability, it will:
 4. Click **Next**.
 5. Stop the automatic checker.
 
-At this point, return to the Prometric page and review the appointment information yourself before completing any remaining steps.
+Return to the Prometric page and review the appointment information yourself before completing any remaining steps.
 
-## How to stop the checker manually
+## Files
 
-If you want to stop it before an appointment is found, paste this into the Console and press **Enter**:
+### `prometric-checker.js`
+The main source-code file. It contains the same checker shown in the Quick Start section above.
 
-```javascript
-clearInterval(window.prometricChecker);
-```
-
-This is also stored in `stop-checker.js`.
+### `stop-checker.js`
+Contains the one-line command used to stop the automatic checker manually.
 
 ## If you accidentally run the main script twice
 
